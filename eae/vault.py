@@ -15,7 +15,6 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from eae.config import (
     DATA_DIR,
@@ -87,7 +86,7 @@ class VaultState:
         self.save()
         return self.points
 
-    def open_valve(self) -> Optional[float]:
+    def open_valve(self) -> float | None:
         """
         Attempt to open the [EXTRACT] valve.
 
