@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FourSight 2.0 — Discover Your Thinking Profile</title>
+  <meta name="description" content="Uncover your creative thinking style with FourSight 2.0 — a Gemini AI-powered assessment that reveals whether you think like a Clarifier, Ideator, Developer, or Implementer." />
+
+  <!-- Preload font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="container header-inner">
+      <a class="logo" href="#" onclick="location.reload(); return false;">
+        <div class="logo-icon">🔮</div>
+        <span class="logo-text">FourSight</span>
+        <span class="logo-version">2.0</span>
+      </a>
+
+      <div class="gemini-badge">
+        <!-- Google G icon, simplified -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="10" fill="url(#gGrad)"/>
+          <defs>
+            <linearGradient id="gGrad" x1="0" y1="0" x2="24" y2="24">
+              <stop offset="0%" stop-color="#4285F4"/>
+              <stop offset="33%" stop-color="#EA4335"/>
+              <stop offset="66%" stop-color="#FBBC05"/>
+              <stop offset="100%" stop-color="#34A853"/>
+            </linearGradient>
+          </defs>
+          <text x="6.5" y="16.5" font-size="13" font-weight="700" fill="white" font-family="sans-serif">G</text>
+        </svg>
+        Powered by Gemini
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ────────────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- ══ SECTION: HOME ══════════════════════════════════════════════════ -->
+    <section id="section-home" class="section active">
+      <div class="container">
+
+        <div class="hero">
+          <div class="hero-eyebrow">✦ Thinking Profile Assessment</div>
+          <h1>Discover How<br>You Think Best</h1>
+          <p>
+            FourSight 2.0 is a Gemini AI-powered assessment that reveals your
+            creative thinking style across four dimensions — so you can work
+            smarter, collaborate better, and contribute your best.
+          </p>
+
+          <!-- Four profile preview cards -->
+          <div class="styles-grid">
+            <div class="style-card clarifier">
+              <span class="style-dot"></span>
+              <div>
+                <div class="style-label">🔍 Clarifier</div>
+                <div class="style-desc">Fact-finder &amp; analyst</div>
+              </div>
+            </div>
+            <div class="style-card ideator">
+              <span class="style-dot"></span>
+              <div>
+                <div class="style-label">💡 Ideator</div>
+                <div class="style-desc">Creative visionary</div>
+              </div>
+            </div>
+            <div class="style-card developer">
+              <span class="style-dot"></span>
+              <div>
+                <div class="style-label">⚙️ Developer</div>
+                <div class="style-desc">Strategic planner</div>
+              </div>
+            </div>
+            <div class="style-card implementer">
+              <span class="style-dot"></span>
+              <div>
+                <div class="style-label">🚀 Implementer</div>
+                <div class="style-desc">Action-oriented doer</div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-primary" id="btn-start">
+            Start Assessment &nbsp;→
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══ SECTION: API KEY SETUP ═════════════════════════════════════════ -->
+    <section id="section-setup" class="section">
+      <div class="container">
+        <div class="setup-card">
+          <h2>Connect to Gemini AI</h2>
+          <p>
+            FourSight 2.0 uses Gemini to generate personalised insights from
+            your results. Enter your Gemini API key to continue — it is kept
+            in memory only for this page session and is never written to disk.
+          </p>
+
+          <div id="setup-error" class="error-box"></div>
+
+          <div class="form-group">
+            <label for="api-key-input">Gemini API Key</label>
+            <input
+              type="password"
+              id="api-key-input"
+              placeholder="AIza…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="hint">
+              Don't have a key?
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">
+                Get one free at Google AI Studio →
+              </a>
+            </p>
+          </div>
+
+          <button class="btn-primary" id="btn-begin" style="width:100%; justify-content:center;">
+            Begin Assessment →
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ SECTION: ASSESSMENT ════════════════════════════════════════════ -->
+    <section id="section-assessment" class="section">
+      <div class="container">
+
+        <div class="assessment-header">
+          <div class="progress-info">
+            <span id="progress-text">Question 1 of 10</span>
+            <span id="progress-label"></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div class="question-card">
+          <div class="question-number" id="question-number">Question 1</div>
+          <div class="question-text" id="question-text"></div>
+          <div class="options" id="options"></div>
+        </div>
+
+        <div class="nav-btns">
+          <button class="btn-secondary" id="btn-prev">← Back</button>
+          <button class="btn-primary" id="btn-next" disabled>Next →</button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ══ SECTION: LOADING ════════════════════════════════════════════════ -->
+    <section id="section-loading" class="section">
+      <div class="container">
+        <div class="loading-wrap">
+          <div class="spinner"></div>
+          <h3>Analysing your thinking profile…</h3>
+          <p>Gemini is crafting personalised insights for you.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ SECTION: RESULTS ════════════════════════════════════════════════ -->
+    <section id="section-results" class="section">
+      <div class="container">
+
+        <div class="results-hero">
+          <div id="profile-badge" class="profile-badge clarifier">
+            <span>🔍</span><span>Clarifier</span>
+          </div>
+          <h2 id="result-title">You understand before you act.</h2>
+          <p class="subtitle" id="result-subtitle"></p>
+        </div>
+
+        <!-- Score chart -->
+        <div class="scores-card">
+          <h3>Your Score Breakdown</h3>
+
+          <div class="score-row clarifier">
+            <span class="score-label">🔍 Clarifier</span>
+            <div class="score-track"><div class="score-bar" id="bar-c" style="width:0%"></div></div>
+            <span class="score-pct" id="pct-c">0%</span>
+          </div>
+          <div class="score-row ideator">
+            <span class="score-label">💡 Ideator</span>
+            <div class="score-track"><div class="score-bar" id="bar-i" style="width:0%"></div></div>
+            <span class="score-pct" id="pct-i">0%</span>
+          </div>
+          <div class="score-row developer">
+            <span class="score-label">⚙️ Developer</span>
+            <div class="score-track"><div class="score-bar" id="bar-d" style="width:0%"></div></div>
+            <span class="score-pct" id="pct-d">0%</span>
+          </div>
+          <div class="score-row implementer">
+            <span class="score-label">🚀 Implementer</span>
+            <div class="score-track"><div class="score-bar" id="bar-m" style="width:0%"></div></div>
+            <span class="score-pct" id="pct-m">0%</span>
+          </div>
+        </div>
+
+        <!-- AI Insights -->
+        <div class="insights-card">
+          <div class="insights-card-header">
+            <div class="gemini-icon"></div>
+            <h3>AI Insights — Powered by Gemini</h3>
+          </div>
+          <div id="insights-error" class="error-box"></div>
+          <div id="insights-text" class="insights-text"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="result-actions">
+          <button class="btn-primary" id="btn-restart">
+            🔄 Retake Assessment
+          </button>
+          <button class="btn-secondary" id="btn-change-key">
+            🔑 Change API Key
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────────────────── -->
+  <footer>
+    <div class="container">
+      <p>
+        FourSight 2.0 &mdash; Built with
+        <a href="https://aistudio.google.com/apps" target="_blank" rel="noopener">Google AI Studio</a>
+        &amp; Gemini &nbsp;|&nbsp;
+        <a href="https://www.foursightonline.com/" target="_blank" rel="noopener">Learn about FourSight</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
