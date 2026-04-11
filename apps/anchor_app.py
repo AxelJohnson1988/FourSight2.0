@@ -10,7 +10,32 @@ from __future__ import annotations
 import argparse
 import hashlib
 import sys
+import tempfile
 from pathlib import Path
+
+
+def _read_uploaded_file(file_obj) -> bytes:  # type: ignore[type-arg]
+    """Read bytes from a Gradio file object.
+
+    Gradio 4.x passes an object whose ``.name`` attribute is a temporary file
+    path managed by Gradio.  We validate it is a regular file inside the
+    system temporary directory before opening.
+    """
+    if hasattr(file_obj, "read"):
+        return file_obj.read()
+
+    # file_obj is a path-like or string pointing to Gradio's temp file
+    raw_path = getattr(file_obj, "name", file_obj)
+    candidate = Path(str(raw_path)).resolve()
+
+    # Restrict access to files inside the system temp directory
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    if not str(candidate).startswith(str(tmp_root) + "/"):
+        raise ValueError("Uploaded file is not in the expected temporary directory.")
+    if not candidate.is_file():
+        raise ValueError("Uploaded path is not a regular file.")
+
+    return candidate.read_bytes()
 
 
 def process_payload(text_input: str, file_obj) -> str:  # type: ignore[type-arg]
@@ -23,18 +48,9 @@ def process_payload(text_input: str, file_obj) -> str:  # type: ignore[type-arg]
 
     if file_obj is not None:
         try:
-            # Gradio may give us a file path or file-like object
-            if hasattr(file_obj, "read"):
-                payload += file_obj.read()
-            else:
-                # Resolve the path to prevent traversal; only allow existing files
-                safe_path = Path(str(file_obj)).resolve()
-                if not safe_path.is_file():
-                    return "Error reading file: path is not a valid file."
-                with safe_path.open("rb") as fh:
-                    payload += fh.read()
+            payload += _read_uploaded_file(file_obj)
         except Exception as exc:  # noqa: BLE001
-            return f"Error reading file: {type(exc).__name__}"
+            return f"Error reading uploaded file: {type(exc).__name__}"
 
     if not payload:
         return "⚠️  Please provide text and/or upload a file."
