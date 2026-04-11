@@ -170,7 +170,12 @@ def _scan_file_gpu(
                         )
                     )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("GPU scan failed for %s (%s); falling back to CPU", file_path, exc)
+        logger.warning(
+            "GPU scan failed for %s (%s: %s); falling back to CPU",
+            file_path,
+            type(exc).__name__,
+            exc,
+        )
         return _scan_file_cpu(
             file_path,
             patterns,

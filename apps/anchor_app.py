@@ -30,7 +30,9 @@ def _read_uploaded_file(file_obj) -> bytes:  # type: ignore[type-arg]
 
     # Restrict access to files inside the system temp directory
     tmp_root = Path(tempfile.gettempdir()).resolve()
-    if not str(candidate).startswith(str(tmp_root) + "/"):
+    try:
+        candidate.relative_to(tmp_root)
+    except ValueError:
         raise ValueError("Uploaded file is not in the expected temporary directory.")
     if not candidate.is_file():
         raise ValueError("Uploaded path is not a regular file.")
