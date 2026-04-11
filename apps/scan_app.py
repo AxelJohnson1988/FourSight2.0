@@ -26,8 +26,9 @@ def run_scan(root_dir: str, text_only: bool, redact: bool, keywords: str) -> str
     if not root_dir.strip():
         return "⚠️  Please enter a directory path."
 
-    root = Path(root_dir.strip())
-    if not root.exists():
+    # Resolve to an absolute path to prevent traversal attacks
+    root = Path(root_dir.strip()).resolve()
+    if not root.exists() or not root.is_dir():
         return f"⚠️  Directory does not exist: {root}"
 
     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
@@ -51,7 +52,7 @@ def run_scan(root_dir: str, text_only: bool, redact: bool, keywords: str) -> str
             findings = scan(entries, cfg)
             write_findings(findings, findings_path)
         except Exception as exc:  # noqa: BLE001
-            return f"Error during scan: {exc}"
+            return f"Error during crawl/scan: {type(exc).__name__}: {exc}"
 
         by_type: dict[str, list[str]] = {}
         for f in findings:

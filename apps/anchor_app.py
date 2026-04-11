@@ -27,10 +27,14 @@ def process_payload(text_input: str, file_obj) -> str:  # type: ignore[type-arg]
             if hasattr(file_obj, "read"):
                 payload += file_obj.read()
             else:
-                with open(file_obj, "rb") as fh:
+                # Resolve the path to prevent traversal; only allow existing files
+                safe_path = Path(str(file_obj)).resolve()
+                if not safe_path.is_file():
+                    return "Error reading file: path is not a valid file."
+                with safe_path.open("rb") as fh:
                     payload += fh.read()
         except Exception as exc:  # noqa: BLE001
-            return f"Error reading file: {exc}"
+            return f"Error reading file: {type(exc).__name__}"
 
     if not payload:
         return "⚠️  Please provide text and/or upload a file."
