@@ -9,9 +9,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
+
+# Optional environment variable that restricts which base directory the app is
+# allowed to scan.  Set this in production deployments to prevent users from
+# scanning arbitrary paths on the host.  Leave unset (or set to "") to allow
+# any directory (suitable for local / Colab use).
+_ALLOWED_BASE_ENV = "PHOENIX_SCAN_BASE_DIR"
+
+
+def _validate_scan_root(root_dir_str: str) -> tuple[Path | None, str]:
+    """Validate and resolve the user-supplied directory path.
+
+    Returns ``(resolved_path, "")`` on success or ``(None, error_message)``
+    on failure.
+    """
+    stripped = root_dir_str.strip()
+    if not stripped:
+        return None, "⚠️  Please enter a directory path."
+
+    root = Path(stripped).resolve()
+
+    # Enforce optional base-directory allow-list
+    allowed_base_str = os.environ.get(_ALLOWED_BASE_ENV, "").strip()
+    if allowed_base_str:
+        allowed_base = Path(allowed_base_str).resolve()
+        try:
+            root.relative_to(allowed_base)
+        except ValueError:
+            return (
+                None,
+                f"⚠️  Scanning is restricted to paths under {allowed_base}. "
+                f"Set {_ALLOWED_BASE_ENV} to change this.",
+            )
+
+    if not root.is_dir():
+        return None, f"⚠️  Directory does not exist: {root}"
+
+    return root, ""
 
 
 def run_scan(root_dir: str, text_only: bool, redact: bool, keywords: str) -> str:
@@ -23,13 +61,9 @@ def run_scan(root_dir: str, text_only: bool, redact: bool, keywords: str) -> str
     except ImportError as exc:
         return f"Import error: {exc}\nInstall with: pip install -e ."
 
-    if not root_dir.strip():
-        return "⚠️  Please enter a directory path."
-
-    # Resolve to an absolute path to prevent traversal attacks
-    root = Path(root_dir.strip()).resolve()
-    if not root.exists() or not root.is_dir():
-        return f"⚠️  Directory does not exist: {root}"
+    root, error = _validate_scan_root(root_dir)
+    if error:
+        return error
 
     kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
 

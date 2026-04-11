@@ -30,6 +30,20 @@ unset PHOENIX_PRIVATE_KEY_HEX               # clear after use
   processing confidential files.
 * The UI displays an explicit warning about uploading sensitive files.
 
+### Restricting the scan root (production deployments)
+
+By default `scan_app.py` will scan any directory that the process user can
+read.  In a shared or public deployment set `PHOENIX_SCAN_BASE_DIR` to
+restrict scanning to a specific subtree:
+
+```bash
+export PHOENIX_SCAN_BASE_DIR="/safe/data/root"
+python apps/scan_app.py
+```
+
+Any path the user enters that is not under `PHOENIX_SCAN_BASE_DIR` will be
+rejected with an error message.
+
 ## Output Files
 
 * `findings.jsonl` and `summary.json` may contain file paths and pattern
