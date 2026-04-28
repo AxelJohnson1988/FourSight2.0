@@ -221,7 +221,14 @@ def scan(
 
 
 def write_findings(findings: list[Finding], path: Path) -> None:
-    """Write findings to a JSONL file."""
+    """Write findings to a JSONL file.
+
+    If *findings* is empty the file is **not** written, preventing a zero-row
+    JSONL from being anchored (which would produce the e3b0c44… null digest).
+    """
+    if not findings:
+        logger.info("No findings to write; skipping %s", path)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         for finding in findings:
