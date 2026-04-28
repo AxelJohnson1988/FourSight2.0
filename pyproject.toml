@@ -17,11 +17,12 @@ dependencies = [
 ui = ["gradio>=4.0"]
 gpu = ["cudf-cu11"]
 pipeline = ["pyyaml>=6.0"]
-dev = ["pytest>=7.0", "rich>=13.0", "requests>=2.31", "pyyaml>=6.0"]
+warden = ["flask>=3.0", "requests>=2.31"]
+dev = ["pytest>=7.0", "rich>=13.0", "requests>=2.31", "pyyaml>=6.0", "flask>=3.0"]
 
 [project.scripts]
 phoenix-scanner = "phoenix_scanner.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["phoenix_scanner*", "apps*"]
+include = ["phoenix_scanner*", "apps*", "warden*"]
