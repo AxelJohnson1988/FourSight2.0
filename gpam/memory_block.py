@@ -32,6 +32,45 @@ class MemoryStatus(str, Enum):
     SYNTHESIZED = "SYNTHESIZED"
 
 
+class EvidenceState(str, Enum):
+    """Four-state evidence verification model from ElephantBroker.
+
+    Maps each state to a confidence multiplier that scales
+    ``MemoryBlock.confidence_score`` to produce ``effective_confidence``.
+
+    States
+    ------
+    UNVERIFIED
+        Initial state.  Claim written from memory or LLM output.
+        Multiplier ``0.5`` — treated with significant scepticism.
+    SELF_SUPPORTED
+        Corroborated by other facts already in the belief store (e.g. the
+        claim cross-references consistently with other timeline entries).
+        Multiplier ``0.7``.
+    TOOL_SUPPORTED
+        Verified by an external tool or API output — e.g. a MyChart record,
+        a court portal timestamp, or an attached screenshot.
+        Multiplier ``0.9``.
+    SUPERVISOR_VERIFIED
+        Explicitly reviewed and confirmed by the human supervisor.
+        Multiplier ``1.0`` — full epistemic authority.
+    """
+
+    UNVERIFIED = "UNVERIFIED"
+    SELF_SUPPORTED = "SELF_SUPPORTED"
+    TOOL_SUPPORTED = "TOOL_SUPPORTED"
+    SUPERVISOR_VERIFIED = "SUPERVISOR_VERIFIED"
+
+
+# Confidence multipliers for each evidence state.
+EVIDENCE_MULTIPLIERS: dict[EvidenceState, float] = {
+    EvidenceState.UNVERIFIED: 0.5,
+    EvidenceState.SELF_SUPPORTED: 0.7,
+    EvidenceState.TOOL_SUPPORTED: 0.9,
+    EvidenceState.SUPERVISOR_VERIFIED: 1.0,
+}
+
+
 def _canonical_json(obj: dict) -> str:
     """Stable, compact JSON string — deterministic across Python versions."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -100,6 +139,10 @@ class MemoryBlock(BaseModel):
     created_at: StrictStr
     status: MemoryStatus
 
+    # Evidence verification state — determines the confidence multiplier.
+    # Starts at UNVERIFIED (×0.5); promoted explicitly through the four states.
+    evidence_state: EvidenceState = Field(default=EvidenceState.UNVERIFIED)
+
     # Empty string until with_hash() is called; excluded from its own hash.
     hash: StrictStr = Field(default="")
 
@@ -134,6 +177,23 @@ class MemoryBlock(BaseModel):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @property
+    def effective_confidence(self) -> float:
+        """Confidence score scaled by the evidence state multiplier.
+
+        This is the epistemic weight the scoring layer should use when
+        deciding which blocks belong in a reasoning context window.
+
+        Examples
+        --------
+        >>> mb.confidence_score = 0.8
+        >>> mb.evidence_state = EvidenceState.TOOL_SUPPORTED   # ×0.9
+        >>> mb.effective_confidence
+        0.72
+        """
+        multiplier = EVIDENCE_MULTIPLIERS[self.evidence_state]
+        return round(self.confidence_score * multiplier, 10)
 
     @staticmethod
     def now_iso8601_utc() -> str:
