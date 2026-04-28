@@ -35,6 +35,9 @@ jobs:
   notion-sync:
     name: Sync changed files → Notion
     runs-on: ubuntu-latest
+    # Minimal GITHUB_TOKEN permissions — read-only for checkout; no write authority.
+    permissions:
+      contents: read
     # Only run on the main repo — not on forks (prevents credential exposure).
     if: github.repository == 'AxelJohnson1988/FourSight2.0'
 

@@ -62,27 +62,34 @@ export async function ingestToNotebookLM(options: IngestOptions): Promise<void> 
     });
 
     // 2. Observe login state — do NOT automate Google OAuth.
-    //    If the user is not logged in, log the blocker and exit cleanly.
-    const loginState = await page.observe(
-      "Check whether the user is already logged in to NotebookLM. " +
-        'Look for a "New Notebook" button or notebook list. ' +
-        "If a Google sign-in page is shown, report NOT_LOGGED_IN."
-    );
+    //    We ask Stagehand to extract a structured state code rather than
+    //    parsing free-form observation text, avoiding fragile string matching.
+    type LoginStateCode = "LOGGED_IN" | "NOT_LOGGED_IN" | "UNKNOWN";
+
+    const loginStateCode: LoginStateCode = await page.extract({
+      instruction:
+        'Determine whether the user is logged in to NotebookLM. ' +
+        'Return exactly one of these codes: ' +
+        '"LOGGED_IN" if a "New Notebook" button or notebook list is visible, ' +
+        '"NOT_LOGGED_IN" if a Google sign-in or account-picker page is shown, ' +
+        '"UNKNOWN" if you cannot determine the state.',
+      schema: {
+        type: "object",
+        properties: {
+          code: { type: "string", enum: ["LOGGED_IN", "NOT_LOGGED_IN", "UNKNOWN"] },
+        },
+        required: ["code"],
+      },
+    }).then((r: { code: LoginStateCode }) => r.code).catch(() => "UNKNOWN" as LoginStateCode);
 
     appendToGPAM({
       event_type: "login_state_observed",
       target: "notebooklm",
       batch_id: batchId,
-      observation: String(loginState),
+      login_state: loginStateCode,
     });
 
-    const observationText =
-      typeof loginState === "string"
-        ? loginState
-        : JSON.stringify(loginState);
-
-    if (observationText.includes("NOT_LOGGED_IN") ||
-        observationText.toLowerCase().includes("sign in")) {
+    if (loginStateCode !== "LOGGED_IN") {
       appendToGPAM({
         event_type: "notebooklm_batch_ingest",
         target: "notebooklm",
@@ -91,7 +98,7 @@ export async function ingestToNotebookLM(options: IngestOptions): Promise<void> 
         message: "Human must log in to NotebookLM first; re-run after auth.",
       });
       console.warn(
-        `[HITL] Batch ${batchId}: NotebookLM requires login. ` +
+        `[HITL] Batch ${batchId}: NotebookLM requires login (state=${loginStateCode}). ` +
           "Log in manually and re-run this script."
       );
       return;
