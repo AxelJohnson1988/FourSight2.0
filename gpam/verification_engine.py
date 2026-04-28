@@ -116,8 +116,11 @@ def _tfidf_cosine_mean(texts: List[str]) -> float:
         for tok in set(tokens):
             df[tok] = df.get(tok, 0) + 1
 
-    # IDF (add-1 smoothing already implicit since every term appears >= once)
-    idf: dict[str, float] = {tok: math.log(n / freq) for tok, freq in df.items()}
+    # Smoothed IDF (sklearn-style): log((N+1)/(df+1)) + 1
+    # Prevents IDF=0 when all documents share a term (handles identical-text case).
+    idf: dict[str, float] = {
+        tok: math.log((n + 1) / (freq + 1)) + 1.0 for tok, freq in df.items()
+    }
 
     def _tfidf_vec(tokens: List[str]) -> dict[str, float]:
         tf = Counter(tokens)

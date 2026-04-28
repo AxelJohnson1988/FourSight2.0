@@ -23,14 +23,19 @@ from gpam.notebooklm_batch_runner import (
 )
 from gpam.verification_engine import EngineResult, SourceResult, VerificationEngine
 from gpam.verified_memory_gate import VmgPolicy, VmgResult, verified_memory_gate
+from gpam.adobe_packer import AdobeSpacePacker, TilePackerPolicy, TilePayload, Tile
 
 __all__ = [
+    "AdobeSpacePacker",
     "BatchPolicy",
     "BuildInput",
     "EngineResult",
     "MemoryBlock",
     "MemoryStatus",
     "SourceResult",
+    "Tile",
+    "TilePackerPolicy",
+    "TilePayload",
     "VerificationEngine",
     "VmgPolicy",
     "VmgResult",
