@@ -1,0 +1,114 @@
+name: Notion Forward Sync
+
+# Triggered automatically on push to main (for "actions" route in sync-policy.yml)
+# or manually via workflow_dispatch for testing.
+#
+# Sovereignty rules enforced here:
+#   - Only PUBLIC/INTERNAL files are synced via this workflow.
+#   - REGULATED / sensitive path prefixes are excluded via path filters.
+#   - Notion is the mirror; GitHub is always the canonical source of truth.
+#   - No file is ever written back to Git from this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Sync these paths via GitHub Actions (public/internal only).
+      - "docs/**"
+      - "gpam/**"
+      # Explicitly exclude sensitive paths — even if they somehow match above.
+      - "!legal/**"
+      - "!shadow/**"
+      - "!medical/**"
+  workflow_dispatch:
+    inputs:
+      path_prefix:
+        description: "Path prefix to sync (e.g. docs/adr/)"
+        required: false
+        default: "docs/"
+      data_class:
+        description: "Data class (PUBLIC | INTERNAL)"
+        required: false
+        default: "INTERNAL"
+
+jobs:
+  notion-sync:
+    name: Sync changed files → Notion
+    runs-on: ubuntu-latest
+    # Only run on the main repo — not on forks (prevents credential exposure).
+    if: github.repository == 'AxelJohnson1988/FourSight2.0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # need HEAD and HEAD^ for git diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]" -q
+
+      - name: Validate sync policy
+        run: |
+          python - <<'EOF'
+          from gpam.sync.policy import load_policy
+          from pathlib import Path
+          policy = load_policy(Path("sync-policy.yml"))
+          print(f"Policy loaded: forward default={policy['forward']['default']}, reverse default={policy['reverse']['default']}")
+          EOF
+
+      - name: Run forward sync (actions backend)
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_ADR_DB_ID: ${{ secrets.NOTION_ADR_DB_ID }}
+          NOTION_GPAM_DB_ID: ${{ secrets.NOTION_GPAM_DB_ID }}
+          # NOTE: NOTION_LEGAL_DB_ID and NOTION_SHADOW_DB_ID are intentionally
+          # absent from this workflow — those paths route to the local backend.
+        run: |
+          python - <<'EOF'
+          import os
+          from pathlib import Path
+          from gpam.sync.policy import (
+              DataClass, LatencySla, SyncRequest, SyncRouter, load_policy
+          )
+          from gpam.sync.forward import run_local_forward
+          import yaml
+
+          policy = load_policy(Path("sync-policy.yml"))
+          router = SyncRouter(policy)
+          transformer_table = policy.get("routing", {}).get("transformer_table", [])
+
+          # Substitute env vars into database IDs.
+          for rule in transformer_table:
+              rule["notion_database_id"] = os.path.expandvars(
+                  rule.get("notion_database_id", "")
+              )
+
+          req = SyncRequest(
+              path_prefix=os.environ.get("INPUT_PATH_PREFIX", "docs/"),
+              data_class=DataClass(os.environ.get("INPUT_DATA_CLASS", "INTERNAL")),
+              latency_sla=LatencySla.BATCH,
+          )
+
+          decision = router.route(req)
+          print(f"Route decision: forward={decision.forward.value}, matched={decision.forward_rule_matched}")
+
+          # For the "actions" backend, the actual Notion upsert runs here
+          # (not via workflow_dispatch of another workflow).
+          result = run_local_forward(
+              req, decision,
+              transformer_table=transformer_table,
+          )
+          print(f"Synced: {result.files_routed} files, skipped: {result.files_skipped}")
+
+          if not result.success:
+              print(f"ERROR: {result.error}")
+              raise SystemExit(1)
+          EOF
+        env:
+          INPUT_PATH_PREFIX: ${{ github.event.inputs.path_prefix || 'docs/' }}
+          INPUT_DATA_CLASS: ${{ github.event.inputs.data_class || 'INTERNAL' }}

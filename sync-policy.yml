@@ -1,0 +1,71 @@
+forward:
+  # Default backend for all forward (Git → Notion) syncs.
+  # "actions" = triggered automatically on every push via GitHub Actions.
+  # "local"   = runs on the Warden node (cron/systemd); no data touches GitHub runners.
+  default: actions
+
+  rules:
+    # Legal files never leave the Warden node — too sensitive for shared runners.
+    - match:
+        path_prefix: "legal/"
+      route: local
+
+    # Shadow's Reckoning arc — local only.
+    - match:
+        path_prefix: "shadow/"
+      route: local
+
+    # Any file tagged REGULATED in data_class goes local regardless of path.
+    - match:
+        data_class: "REGULATED"
+      route: local
+
+reverse:
+  # Default backend for all reverse (Notion → Git annotation) syncs.
+  # "polling"           = Warden reaches OUT to Notion on a schedule; zero inbound exposure.
+  # "webhook_cloudflare"= Notion pushes IN via Cloudflare Tunnel + Access; requires explicit opt-in.
+  default: polling
+
+  rules:
+    # Webhook is only selected when BOTH conditions are met:
+    #   1. latency_sla is "realtime"
+    #   2. inbound_exposure_allowed is explicitly true (env + request flag)
+    # Without BOTH, system falls back to polling.
+    - match:
+        latency_sla: "realtime"
+        inbound_exposure_allowed: true
+      route: webhook_cloudflare
+
+routing:
+  # Canonical source-of-truth repository (confirmed: AxelJohnson1988/phoenix-protocol).
+  # Used by the local forward sync runner for commit metadata and GPAM logging.
+  canonical_repo: "AxelJohnson1988/phoenix-protocol"
+
+  # Path prefixes that are always routed to the local backend, regardless of
+  # other rules. Acts as a hard override — edit this list to add new sensitive paths.
+  sensitive_path_prefixes:
+    - "legal/"
+    - "shadow/"
+    - "medical/"
+
+  # Annotations from Notion are committed under this directory prefix.
+  # The GitHub token used for annotation commits must have write access ONLY here.
+  annotation_dir: "annotations/"
+
+  # Transformer table: maps path prefixes to Notion database IDs.
+  # Set each database_id from your Notion URL before running the sync.
+  transformer_table:
+    - path_prefix: "docs/adr/"
+      notion_database_id: "${NOTION_ADR_DB_ID}"
+      label: "ADR Registry"
+    - path_prefix: "gpam/"
+      notion_database_id: "${NOTION_GPAM_DB_ID}"
+      label: "Memory Blocks"
+    - path_prefix: "legal/"
+      notion_database_id: "${NOTION_LEGAL_DB_ID}"
+      label: "Legal Timeline"
+      route_override: local  # enforced local regardless of forward.default
+    - path_prefix: "shadow/"
+      notion_database_id: "${NOTION_SHADOW_DB_ID}"
+      label: "Shadow's Reckoning"
+      route_override: local
