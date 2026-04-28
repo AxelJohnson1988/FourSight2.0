@@ -19,6 +19,8 @@ class Config:
     max_file_size: int = 10 * 1024 * 1024  # 10 MB
     text_only: bool = False
     checkpoint_file: Path | None = None
+    # Phase 4: SQLite checkpoint replaces the plain-text checkpoint file when set.
+    checkpoint_db_path: Path | None = None
     manifest_path: Path = field(default_factory=lambda: Path("manifest.jsonl"))
 
     # Scanner
@@ -27,6 +29,10 @@ class Config:
     redact_matches: bool = False
     use_gpu: bool = False  # opt-in; falls back to CPU if unavailable
     extra_keywords: list[str] = field(default_factory=list)
+    # Phase 1: directory of .py plugin files loaded into PatternRegistry at runtime.
+    patterns_dir: Path | None = None
+    # Phase 2: run each file scan in an isolated worker process.
+    sandboxed: bool = False
 
     # Ledger
     findings_path: Path = field(default_factory=lambda: Path("findings.jsonl"))

@@ -16,7 +16,8 @@ dependencies = [
 [project.optional-dependencies]
 ui = ["gradio>=4.0"]
 gpu = ["cudf-cu11"]
-dev = ["pytest>=7.0", "rich>=13.0", "requests>=2.31"]
+pipeline = ["pyyaml>=6.0"]
+dev = ["pytest>=7.0", "rich>=13.0", "requests>=2.31", "pyyaml>=6.0"]
 
 [project.scripts]
 phoenix-scanner = "phoenix_scanner.cli:main"

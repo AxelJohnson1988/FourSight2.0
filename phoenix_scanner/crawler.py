@@ -1,4 +1,10 @@
-"""Drive crawler / indexer – multi-process, resumable, JSONL manifest output."""
+"""Drive crawler / indexer – multi-process, resumable, JSONL manifest output.
+
+Phase 4: Pass a :class:`~phoenix_scanner.checkpoint.CheckpointDB` instance
+(or set ``config.checkpoint_db_path``) to enable SQLite-backed resumption that
+tracks ``pending`` / ``done`` / ``failed`` state per directory.  The legacy
+text-file checkpoint (``config.checkpoint_file``) remains fully supported.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +16,12 @@ import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Generator, Iterable
+from typing import TYPE_CHECKING, Generator, Iterable
 
 from phoenix_scanner.config import Config
+
+if TYPE_CHECKING:
+    from phoenix_scanner.checkpoint import CheckpointDB
 
 logger = logging.getLogger(__name__)
 
@@ -151,14 +160,48 @@ def _enumerate_dirs(root: Path, exclude_globs: list[str]) -> Generator[str, None
             pass
 
 
-def crawl(config: Config, *, max_workers: int = 4) -> list[ManifestEntry]:
+def crawl(
+    config: Config,
+    *,
+    max_workers: int = 4,
+    checkpoint_db: "CheckpointDB | None" = None,
+) -> list[ManifestEntry]:
     """Crawl *config.root_dir* and return a sorted list of ManifestEntry objects.
 
-    Supports resuming via *config.checkpoint_file*: directories already
-    written to the checkpoint are skipped.
+    Resumption priority (highest → lowest):
+
+    1. *checkpoint_db* parameter — a pre-constructed
+       :class:`~phoenix_scanner.checkpoint.CheckpointDB` instance.
+    2. ``config.checkpoint_db_path`` — a path; a ``CheckpointDB`` is created
+       automatically and closed before returning.
+    3. ``config.checkpoint_file`` — legacy plain-text checkpoint file.
+
+    Parameters
+    ----------
+    config:
+        Crawler configuration including root directory and filters.
+    max_workers:
+        Number of worker processes for ``ProcessPoolExecutor``.
+    checkpoint_db:
+        Optional pre-created SQLite checkpoint database.  When provided,
+        directories already marked ``'done'`` are skipped and completed
+        directories are marked ``'done'`` as they finish.
     """
+    # ------------------------------------------------------------------ #
+    # Determine which checkpoint backend to use                           #
+    # ------------------------------------------------------------------ #
+    _owned_db: "CheckpointDB | None" = None  # closed at end if we created it
+
+    if checkpoint_db is None and config.checkpoint_db_path:
+        from phoenix_scanner.checkpoint import CheckpointDB  # noqa: PLC0415
+
+        _owned_db = CheckpointDB(config.checkpoint_db_path)
+        checkpoint_db = _owned_db
+
     already_done: set[str] = set()
-    if config.checkpoint_file and config.checkpoint_file.exists():
+    if checkpoint_db is not None:
+        already_done = checkpoint_db.done_dirs()
+    elif config.checkpoint_file and config.checkpoint_file.exists():
         with open(config.checkpoint_file) as fh:
             for line in fh:
                 line = line.strip()
@@ -192,13 +235,18 @@ def crawl(config: Config, *, max_workers: int = 4) -> list[ManifestEntry]:
                 rows = future.result()
                 for row in rows:
                     entries.append(ManifestEntry(**row))
+                if checkpoint_db is not None:
+                    checkpoint_db.mark_done(d)
+                elif config.checkpoint_file:
+                    with open(config.checkpoint_file, "a") as fh:
+                        fh.write(d + "\n")
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Directory %s failed: %s", d, exc)
+                if checkpoint_db is not None:
+                    checkpoint_db.mark_failed(d, str(exc))
 
-            # Update checkpoint
-            if config.checkpoint_file:
-                with open(config.checkpoint_file, "a") as fh:
-                    fh.write(d + "\n")
+    if _owned_db is not None:
+        _owned_db.close()
 
     entries.sort(key=lambda e: e.path)
     return entries

@@ -29,6 +29,7 @@ def cmd_crawl(args: argparse.Namespace) -> int:
         max_file_size=args.max_size,
         text_only=args.text_only,
         checkpoint_file=Path(args.checkpoint) if args.checkpoint else None,
+        checkpoint_db_path=Path(args.checkpoint_db) if args.checkpoint_db else None,
         manifest_path=Path(args.output),
     )
 
@@ -46,6 +47,7 @@ def cmd_crawl(args: argparse.Namespace) -> int:
 def cmd_scan(args: argparse.Namespace) -> int:
     from phoenix_scanner.config import Config
     from phoenix_scanner.crawler import read_manifest
+    from phoenix_scanner.registry import PatternRegistry
     from phoenix_scanner.scanner import scan, write_findings
 
     cfg = Config(
@@ -55,12 +57,19 @@ def cmd_scan(args: argparse.Namespace) -> int:
         use_gpu=args.gpu,
         extra_keywords=args.keyword or [],
         findings_path=Path(args.output),
+        sandboxed=args.sandboxed,
     )
+
+    registry: PatternRegistry | None = None
+    if args.patterns_dir:
+        registry = PatternRegistry()
+        registry.load_from_dir(Path(args.patterns_dir))
+        logger.info("Loaded %d pattern(s) from %s", len(registry), args.patterns_dir)
 
     logger.info("Reading manifest %s …", args.manifest)
     entries = read_manifest(Path(args.manifest))
     logger.info("Scanning %d files …", len(entries))
-    findings = scan(entries, cfg)
+    findings = scan(entries, cfg, pattern_registry=registry)
     write_findings(findings, cfg.findings_path)
     print(
         json.dumps(
@@ -77,6 +86,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 def cmd_crawl_scan(args: argparse.Namespace) -> int:
     from phoenix_scanner.config import Config
     from phoenix_scanner.crawler import crawl, write_manifest
+    from phoenix_scanner.registry import PatternRegistry
     from phoenix_scanner.scanner import scan, write_findings
 
     manifest_path = Path(args.manifest_path)
@@ -88,20 +98,28 @@ def cmd_crawl_scan(args: argparse.Namespace) -> int:
         max_file_size=args.max_size,
         text_only=args.text_only,
         manifest_path=manifest_path,
+        checkpoint_db_path=Path(args.checkpoint_db) if args.checkpoint_db else None,
         chunk_size=args.chunk_size,
         max_bytes_per_file=args.max_bytes,
         redact_matches=args.redact,
         use_gpu=args.gpu,
         extra_keywords=args.keyword or [],
         findings_path=Path(args.findings_path),
+        sandboxed=args.sandboxed,
     )
+
+    registry: PatternRegistry | None = None
+    if args.patterns_dir:
+        registry = PatternRegistry()
+        registry.load_from_dir(Path(args.patterns_dir))
+        logger.info("Loaded %d pattern(s) from %s", len(registry), args.patterns_dir)
 
     logger.info("Crawling %s …", cfg.root_dir)
     entries = crawl(cfg, max_workers=args.workers)
     write_manifest(entries, cfg.manifest_path)
 
     logger.info("Scanning %d files …", len(entries))
-    findings = scan(entries, cfg)
+    findings = scan(entries, cfg, pattern_registry=registry)
     write_findings(findings, cfg.findings_path)
 
     print(
@@ -160,6 +178,14 @@ def cmd_key_ceremony(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_pipeline(args: argparse.Namespace) -> int:
+    from phoenix_scanner.pipeline import run_pipeline
+
+    results = run_pipeline(Path(args.file))
+    print(json.dumps(results, indent=2))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Parser
 # ---------------------------------------------------------------------------
@@ -182,6 +208,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_crawl.add_argument("--max-size", type=int, default=10 * 1024 * 1024, help="Max file size (bytes)")
     p_crawl.add_argument("--text-only", action="store_true", help="Only include text-ish files")
     p_crawl.add_argument("--checkpoint", help="Checkpoint file path for resumable crawls")
+    p_crawl.add_argument(
+        "--checkpoint-db",
+        help="SQLite checkpoint DB path (Phase 4; preferred over --checkpoint)",
+    )
     p_crawl.add_argument("--workers", type=int, default=4, help="Number of worker processes")
 
     # ── scan ───────────────────────────────────────────────────────────────
@@ -193,6 +223,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--redact", action="store_true", help="Redact match text in output")
     p_scan.add_argument("--gpu", action="store_true", help="Use GPU acceleration if available")
     p_scan.add_argument("--keyword", nargs="*", help="Extra keywords to search for")
+    p_scan.add_argument(
+        "--patterns-dir",
+        help="Directory of .py plugin files to load into PatternRegistry (Phase 1)",
+    )
+    p_scan.add_argument(
+        "--sandboxed",
+        action="store_true",
+        help="Scan each file in an isolated worker process with resource limits (Phase 2)",
+    )
 
     # ── crawl-scan ─────────────────────────────────────────────────────────
     p_cs = sub.add_parser("crawl-scan", help="Crawl then scan in one step")
@@ -210,11 +249,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_cs.add_argument("--redact", action="store_true")
     p_cs.add_argument("--gpu", action="store_true")
     p_cs.add_argument("--keyword", nargs="*")
+    p_cs.add_argument(
+        "--patterns-dir",
+        help="Directory of .py plugin files to load into PatternRegistry (Phase 1)",
+    )
+    p_cs.add_argument(
+        "--sandboxed",
+        action="store_true",
+        help="Scan each file in an isolated worker process with resource limits (Phase 2)",
+    )
+    p_cs.add_argument(
+        "--checkpoint-db",
+        help="SQLite checkpoint DB path (Phase 4)",
+    )
 
     # ── anchor ─────────────────────────────────────────────────────────────
     p_anchor = sub.add_parser("anchor", help="Hash text/file and generate OP_RETURN payload")
     p_anchor.add_argument("--text", help="Text payload to hash")
     p_anchor.add_argument("--file", help="File path to hash")
+
+    # ── pipeline ───────────────────────────────────────────────────────────
+    p_pipe = sub.add_parser(
+        "pipeline",
+        help="Run a declarative YAML pipeline definition (Phase 3; requires pyyaml)",
+    )
+    p_pipe.add_argument(
+        "--file",
+        default="phoenix_pipeline.yaml",
+        help="Path to the pipeline YAML file (default: phoenix_pipeline.yaml)",
+    )
 
     # ── key-ceremony ───────────────────────────────────────────────────────
     p_key = sub.add_parser("key-ceremony", help="Generate an Ed25519 keypair")
@@ -239,6 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         "crawl-scan": cmd_crawl_scan,
         "anchor": cmd_anchor,
         "key-ceremony": cmd_key_ceremony,
+        "pipeline": cmd_pipeline,
     }
     return dispatch[args.command](args)
 
