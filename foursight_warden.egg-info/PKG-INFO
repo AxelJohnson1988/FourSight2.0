@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: foursight-warden
+Version: 0.1.0
+Summary: FourSight 2.0 — Warden integrity and drift-detection engine
+Requires-Python: >=3.10
+Provides-Extra: dev
+Requires-Dist: pytest>=7; extra == "dev"
