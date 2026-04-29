@@ -32,7 +32,7 @@ import time
 import hashlib
 import argparse
 from pathlib import Path
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -73,7 +73,7 @@ def compute_sha256_file(path: str) -> str:
             sha256.update(chunk)
     digest = sha256.hexdigest()
     # Reject null digest (empty file)
-    if digest == "e3b0c44d52b5d0068cf8b8537d2c2fac9ef1e4d120a1b7e2":
+    if digest == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855":
         raise ValueError("File is empty; refusing to hash")
     return digest
 
@@ -229,7 +229,7 @@ def verify_ledger() -> list[dict]:
         print("[Warden] Ledger is empty.")
         return []
 
-    public_key = load_private_key().public_key()
+    public_key = load_public_key()
     results = []
     previous_hash = "GENESIS"
 
@@ -340,7 +340,7 @@ def scan_directory(root_path: str) -> list[dict]:
         if p.is_file()
     ]
     results: list[dict] = []
-    with ProcessPoolExecutor() as executor:
+    with ThreadPoolExecutor() as executor:
         for res in executor.map(_scan_file, files):
             results.extend(res)
     return results
@@ -357,7 +357,7 @@ def main() -> None:
     group.add_argument("--text", type=str, help="Text payload to hash and sign")
     group.add_argument("--file", type=str, help="File to hash and sign")
     group.add_argument(
-        "--scan", type=str, metavar="DIR", help="Directory to scan for cryptographic artefacts"
+        "--scan", type=str, metavar="DIR", help="Directory to scan for cryptographic artifacts"
     )
     group.add_argument(
         "--verify", action="store_true", help="Verify integrity of the hash-chain ledger"
@@ -373,7 +373,7 @@ def main() -> None:
         return
 
     if args.scan:
-        print(f"[Warden] Scanning '{args.scan}' for cryptographic artefacts...")
+        print(f"[Warden] Scanning '{args.scan}' for cryptographic artifacts...")
         findings = scan_directory(args.scan)
         print(json.dumps(findings[:20], indent=2))
         if len(findings) > 20:
