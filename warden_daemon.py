@@ -17,10 +17,11 @@ ledger directly.  It submits raw payloads (text + optional file path) to
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import os
-import time
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -189,6 +190,12 @@ def sanity_check(content: bytes) -> str:
     """
     Run lightweight pre-signing anomaly detection on raw payload bytes.
 
+    .. note::
+        This is a minimal heuristic guard, not a comprehensive security
+        control.  It catches obvious known-bad patterns on the lowercased
+        content but will not detect encoded, obfuscated, or novel attacks.
+        Evolve into an embedding-based classifier for production use.
+
     Args:
         content: The canonical payload bytes before hashing.
 
@@ -197,8 +204,7 @@ def sanity_check(content: bytes) -> str:
 
     Raises:
         ValueError: When the payload is empty.
-        RuntimeError: When a suspicious pattern is detected (includes the
-            matched pattern in the message so callers can log it).
+        RuntimeError: When a suspicious pattern is detected.
     """
     if len(content) == 0:
         raise ValueError("Empty payload — refusing to sign a null digest.")
@@ -207,8 +213,7 @@ def sanity_check(content: bytes) -> str:
     for pattern in _SUSPICIOUS_PATTERNS:
         if pattern in lower:
             raise RuntimeError(
-                f"⚠️ Suspicious content detected: pattern '{pattern.decode()}' found. "
-                "Signing aborted."
+                "⚠️ Suspicious content detected. Signing aborted."
             )
 
     return "OK"
@@ -225,36 +230,63 @@ def get_last_hash(ledger_path: str | Path) -> str:
     """
     Return the *chain_hash* field of the most recent ledger entry.
 
-    Returns the genesis sentinel (64 zeros) when the ledger is absent or empty.
+    Returns the genesis sentinel (64 zeros) when the ledger is absent,
+    empty, unreadable, or contains no records.
     """
     p = Path(ledger_path)
-    if not p.exists() or p.stat().st_size == 0:
-        return _GENESIS_HASH
-    with p.open("r", encoding="utf-8") as fh:
-        records = json.load(fh)
-    if not records:
-        return _GENESIS_HASH
-    return records[-1]["chain_hash"]
+    try:
+        if not p.exists() or p.stat().st_size == 0:
+            return _GENESIS_HASH
+        with p.open("r", encoding="utf-8") as fh:
+            records = json.load(fh)
+        if not records:
+            return _GENESIS_HASH
+        return records[-1]["chain_hash"]
+    except (OSError, json.JSONDecodeError, KeyError, IndexError):
+        # Corrupted or unreadable ledger: abort to preserve chain integrity.
+        raise RuntimeError(
+            f"Ledger at '{ledger_path}' is corrupted or unreadable. "
+            "Manual inspection is required before continuing."
+        )
 
 
 def append_to_ledger(record: dict, ledger_path: str | Path) -> None:
     """
     Atomically append *record* to the JSON ledger file.
 
-    The ledger is a JSON array written as a single file.  Append is
-    implemented as read-modify-write; for high-throughput use cases replace
-    this with an append-log or SQLite backend.
+    The ledger is a JSON array.  Append is implemented as read-modify-write;
+    the new content is written to a sibling temporary file first and then
+    renamed into place, which is atomic on POSIX file systems.
+
+    .. note::
+        This has O(n) I/O cost as the ledger grows.  For high-throughput
+        deployments replace with a JSONL (newline-delimited JSON) backend
+        or an SQLite store.
     """
     p = Path(ledger_path)
     records: list[dict] = []
-    if p.exists() and p.stat().st_size > 0:
-        with p.open("r", encoding="utf-8") as fh:
-            records = json.load(fh)
+    try:
+        if p.exists() and p.stat().st_size > 0:
+            with p.open("r", encoding="utf-8") as fh:
+                records = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        raise RuntimeError(
+            f"Ledger at '{ledger_path}' is corrupted or unreadable. "
+            "Manual inspection is required before continuing."
+        )
     records.append(record)
-    tmp = p.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as fh:
-        json.dump(records, fh, indent=2)
-    tmp.replace(p)
+    # Write to a sibling temp file then rename for POSIX-atomic replacement.
+    dir_ = p.parent
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=dir_, delete=False, suffix=".tmp"
+    ) as tmp:
+        json.dump(records, tmp, indent=2)
+        tmp_path = Path(tmp.name)
+    try:
+        tmp_path.replace(p)
+    except OSError:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -279,19 +311,20 @@ def anchor(
     """
     Full Warden pipeline: build → check → hash → sign → chain → ledger.
 
-    Exactly one of *file_path* or *file_bytes* should be supplied when
-    anchoring file content; if *file_path* is given its bytes are read here
-    inside the trust boundary.
+    Supply at most one of *file_path* or *file_bytes*.  If *file_path* is
+    given, its bytes are read inside the trust boundary and *file_bytes* must
+    not also be provided.  If both are given, ``ValueError`` is raised.
 
     Args:
         text_input: Optional text payload.
         file_path: Optional path to a file whose content will be included.
-        file_bytes: Optional pre-read file bytes (alternative to file_path).
+        file_bytes: Optional pre-read file bytes (mutually exclusive with
+            *file_path*).
         ledger_path: Path to the JSON ledger file (created if absent).
 
     Returns:
         A dict with the fields:
-            - ``timestamp``      — ISO-8601 UTC timestamp
+            - ``timestamp``      — ISO-8601 UTC high-precision timestamp
             - ``input_size``     — canonical payload size in bytes
             - ``master_hash``    — hex SHA-256 of the canonical payload
             - ``op_return``      — Bitcoin OP_RETURN hex string
@@ -302,12 +335,19 @@ def anchor(
             - ``sanity``         — ``"OK"`` or an anomaly description
 
     Raises:
-        ValueError: On empty payload or invalid key material.
+        ValueError: On empty payload, invalid key material, or when both
+            *file_path* and *file_bytes* are supplied.
         RuntimeError: When the sanity check rejects the content.
         FileNotFoundError: When *file_path* does not exist.
     """
+    # ── validate mutual-exclusion of file sources ─────────────────────────
+    if file_path is not None and file_bytes is not None:
+        raise ValueError(
+            "Provide at most one of 'file_path' or 'file_bytes', not both."
+        )
+
     # ── resolve file bytes ────────────────────────────────────────────────
-    if file_path is not None and file_bytes is None:
+    if file_path is not None:
         fp = Path(file_path)
         if not fp.exists():
             raise FileNotFoundError(f"File not found: {fp}")
@@ -335,8 +375,9 @@ def anchor(
     chained = chain_hash(master_hash, previous_hash)
 
     # ── step 6: assemble record ───────────────────────────────────────────
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     record = {
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "timestamp": now,
         "input_size": len(payload),
         "master_hash": master_hash,
         "op_return": format_op_return(master_hash),
