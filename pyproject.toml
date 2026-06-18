@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phoenix-scanner"
+version = "0.1.0"
+description = "Modular cryptographic scanning toolkit"
+requires-python = ">=3.10"
+readme = "README.md"
+license = { text = "MIT" }
+dependencies = [
+    "cryptography>=41.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+ui = ["gradio>=4.0"]
+gpu = ["cudf-cu11"]
+pipeline = ["pyyaml>=6.0"]
+warden = ["flask>=3.0", "requests>=2.31"]
+gpam = ["requests>=2.31"]
+dev = ["pytest>=7.0", "rich>=13.0", "requests>=2.31", "pyyaml>=6.0", "flask>=3.0"]
+
+[project.scripts]
+phoenix-scanner = "phoenix_scanner.cli:main"
+gpam = "gpam.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["phoenix_scanner*", "apps*", "warden*", "gpam*"]

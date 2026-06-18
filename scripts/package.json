@@ -1,0 +1,18 @@
+{
+  "name": "phoenix-gpam-scripts",
+  "version": "1.0.0",
+  "description": "GPAM Stagehand automation scripts — HITL NotebookLM guidance and GPAM ledger",
+  "private": true,
+  "scripts": {
+    "ingest-notebooklm": "ts-node notebooklm_ingest.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@browserbasehq/stagehand": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
